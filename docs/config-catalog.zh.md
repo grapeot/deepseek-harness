@@ -2993,6 +2993,40 @@ export interface Config {
 
 来源：[`packages/web/web-search-perplexity/src/index.ts:32`](../packages/web/web-search-perplexity/src/index.ts)
 
+<a id="deepseek-aidsh-web-search-tavily"></a>
+
+## `@deepseek-ai/dsh-web-search-tavily`
+
+需要：`web`
+
+```ts config-catalog
+/** Plugin config (all optional — `apply` fills env-var and constant defaults). */
+export interface Config {
+  /** Literal Tavily API key; prefer {@link apiKeyEnv} so no secret enters configuration files. */
+  apiKey?: string
+  /** Credential reference resolved for each search; defaults to `TAVILY_API_KEY`. */
+  apiKeyEnv?: string
+  /** Endpoint base; `/search` is appended. Falls back to `$TAVILY_SEARCH_BASE_URL`. */
+  baseURL?: string
+  /** Search depth sent as Tavily's `search_depth`. Defaults to `advanced`. */
+  searchDepth?: TavilySearchDepth
+  /** Topic filter sent as Tavily's `topic`. Defaults to `general`. */
+  topic?: TavilyTopic
+  /** Default result count when a request carries no `maxResults`. Defaults to 6. */
+  maxResults?: number
+  /** Request Tavily's generated answer; maps to the seam's optional `content`. Defaults to false. */
+  includeAnswer?: boolean
+}
+
+/** Tavily's `search_depth` values, as sent on the wire. */
+export type TavilySearchDepth = 'basic' | 'advanced' | 'fast' | 'ultra-fast'
+
+/** Tavily's `topic` values, as sent on the wire. */
+export type TavilyTopic = 'general' | 'news' | 'finance'
+```
+
+来源：[`packages/web/web-search-tavily/src/index.ts:49`](../packages/web/web-search-tavily/src/index.ts)
+
 <a id="deepseek-aidsh-workflow-worker-thread"></a>
 
 ## `@deepseek-ai/dsh-workflow-worker-thread`
