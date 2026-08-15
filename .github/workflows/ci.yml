@@ -174,14 +174,24 @@ jobs:
     env:
       DSH_GATE_CONCURRENCY: '8'
       DSH_NODE_COMPAT_SKIP_TYPECHECK: '1'
-      DSH_OXLINT_THREADS: '8'
-      DSH_PUBLINT_CONCURRENCY: '8'
-      # Failover halves snapshot concurrency for the shared 64-core VM.
-      DSH_SNAPSHOT_MAX_CONCURRENCY: ${{ vars.DSH_CI_FAILOVER_LINUX == 'selfhosted' && github.event.pull_request.user.login != 'dependabot[bot]' && '12' || '32' }}
+      DSH_OXLINT_THREADS: '4'
+      DSH_PUBLINT_CONCURRENCY: '4'
+      # This fork runs this job on a 4-core hosted runner, not upstream's
+      # 16-core larger runner: match scenario concurrency to the cores so
+      # timing-sensitive waits (stream idle, turn/start deadlines) hold.
+      DSH_SNAPSHOT_MAX_CONCURRENCY: '4'
     steps:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+
+      # Hosted ubuntu runners ship a pwsh binary upstream's snapshot fleet
+      # lacks, and the pwsh-tool-turn pins predate the job/task wording
+      # refactor (they only replay on a host whose probe finds no pwsh).
+      # Shadow pwsh with a failing stub so the scenario skips, matching the
+      # environment the pins were recorded against.
+      - name: Shadow pwsh for snapshot replay parity
+        run: sudo ln -sf /bin/false /usr/local/bin/pwsh
 
       - uses: pnpm/action-setup@v4
         with:
