@@ -148,6 +148,12 @@ describe('TavilySearchProvider.search', () => {
       .rejects.toMatchObject({ code: 'WEB_PROVIDER_ERROR' })
   })
 
+  it('maps a DOMException that is not an AbortError to WEB_PROVIDER_ERROR', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new DOMException('timed out', 'TimeoutError') }))
+    await expect(searchProvider(options).search({ query: 'q' }))
+      .rejects.toMatchObject({ code: 'WEB_PROVIDER_ERROR' })
+  })
+
   it('maps an abort to WEB_ABORTED', async () => {
     const controller = new AbortController()
     controller.abort()
@@ -174,6 +180,41 @@ describe('TavilySearchProvider.search', () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('not json', { status: 200 })))
     await expect(searchProvider(options).search({ query: 'q' }))
       .rejects.toMatchObject({ code: 'WEB_PROVIDER_ERROR' })
+  })
+
+  it('maps an abort raised while fetch is in flight to WEB_ABORTED', async () => {
+    const controller = new AbortController()
+    vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')), { once: true })
+      }),
+    ))
+    const pending = searchProvider(options).search({ query: 'q' }, controller.signal)
+    // Let the credential resolve and fetch start before aborting, so the abort
+    // surfaces from the fetch catch rather than the pre-dispatch check.
+    await new Promise(resolve => setImmediate(resolve))
+    controller.abort()
+    await expect(pending).rejects.toMatchObject({ code: 'WEB_ABORTED' })
+  })
+
+  it('surfaces an abort during error-body parse as WEB_ABORTED', async () => {
+    const controller = new AbortController()
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      controller.abort()
+      return new Response('Bad Gateway', { status: 502 })
+    }))
+    await expect(searchProvider(options).search({ query: 'q' }, controller.signal))
+      .rejects.toMatchObject({ code: 'WEB_ABORTED' })
+  })
+
+  it('surfaces an abort during success-body parse as WEB_ABORTED', async () => {
+    const controller = new AbortController()
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      controller.abort()
+      return new Response('not json', { status: 200 })
+    }))
+    await expect(searchProvider(options).search({ query: 'q' }, controller.signal))
+      .rejects.toMatchObject({ code: 'WEB_ABORTED' })
   })
 
   it('reports an actionable credential error when no key resolves', async () => {
@@ -260,9 +301,11 @@ describe('web-search-tavily plugin registration', () => {
     await fiber.dispose()
   })
 
-  it('falls back to the env key and defaults when config omits them', async () => {
+  it('falls back to the env key and endpoint defaults when config omits them', async () => {
     const prev = process.env.TAVILY_API_KEY
+    const prevBase = process.env.TAVILY_SEARCH_BASE_URL
     process.env.TAVILY_API_KEY = 'env-key'
+    process.env.TAVILY_SEARCH_BASE_URL = 'https://api.tavily.env.test'
     try {
       const fetchMock = vi.fn(async () => jsonResponse(searchResponse()))
       vi.stubGlobal('fetch', fetchMock)
@@ -271,9 +314,29 @@ describe('web-search-tavily plugin registration', () => {
       tavilyPlugin.apply(ctx, {})
       await ctx.web.search({ query: 'q' })
       const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
-      expect(url).toBe('https://api.tavily.com/search')
+      expect(url).toBe('https://api.tavily.env.test/search')
       expect((init.headers as Record<string, string>).authorization).toBe('Bearer env-key')
       expect(JSON.parse(init.body as string)).toMatchObject({ search_depth: 'advanced', topic: 'general' })
+      await ctx.fiber.dispose()
+    } finally {
+      if (prev === undefined) delete process.env.TAVILY_API_KEY
+      else process.env.TAVILY_API_KEY = prev
+      if (prevBase === undefined) delete process.env.TAVILY_SEARCH_BASE_URL
+      else process.env.TAVILY_SEARCH_BASE_URL = prevBase
+    }
+  })
+
+  it('reports an actionable credential error when neither config nor env supplies a key', async () => {
+    const prev = process.env.TAVILY_API_KEY
+    delete process.env.TAVILY_API_KEY
+    try {
+      const ctx = new Context()
+      await ctx.plugin(WebRuntime, { searchProvider: TAVILY_PROVIDER_ID })
+      // No credentials service is mounted, so the ambient environment is the
+      // whole credential plane and the absent env var short-circuits.
+      tavilyPlugin.apply(ctx, {})
+      await expect(ctx.web.search({ query: 'q' }))
+        .rejects.toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_CREDENTIAL_MISSING' }))
       await ctx.fiber.dispose()
     } finally {
       if (prev === undefined) delete process.env.TAVILY_API_KEY

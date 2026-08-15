@@ -206,7 +206,7 @@ export class TavilySearchProvider implements WebSearchProvider {
       return mapTavilyResponse(payload)
     } catch (error: unknown) {
       if (signal?.aborted === true || isAbortError(error)) throw searchAborted(error)
-      if (error instanceof WebError) throw error
+      // `mapTavilyResponse` is total, so nothing in this try can throw a WebError.
       throw new WebError(`Tavily returned an unprocessable response body: ${String(error)}`, 'WEB_PROVIDER_ERROR', { cause: error })
     }
   }
