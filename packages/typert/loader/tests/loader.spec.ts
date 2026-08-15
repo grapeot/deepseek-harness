@@ -398,9 +398,11 @@ describe('typert loader', () => {
 
     await ctx.loader.create({ name: '@fixture/steady-failure' })
     await ctx.loader.await()
-    await new Promise(resolve => setTimeout(resolve, 20))
-
-    expect(logged).toHaveBeenCalledWith(expect.objectContaining({ message: 'register failed' }))
+    // The failure log lands through loader bookkeeping after the create()
+    // promise settles; poll rather than assume a fixed sleep is enough.
+    await vi.waitFor(() => {
+      expect(logged).toHaveBeenCalledWith(expect.objectContaining({ message: 'register failed' }))
+    })
     expect(ctx.typert.getPackage('@fixture/steady-failure')).toBeUndefined()
   })
 })
