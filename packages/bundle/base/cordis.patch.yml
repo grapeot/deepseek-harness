@@ -411,6 +411,15 @@
       config:
         apiKeyEnv: DEEPSEEK_API_KEY
 
+    # Optional Tavily retrieval route: a dedicated search endpoint (no model
+    # turn), so a deployment selecting it pays retrieval units per search.
+    # Selection is a `web` row override (`searchProvider: tavily`); the key
+    # resolves per search through the credentials seam.
+    - id: web-search-tavily
+      name: '@deepseek-ai/dsh-web-search-tavily'
+      config:
+        apiKeyEnv: TAVILY_API_KEY
+
     - id: tool-web
       name: '@deepseek-ai/dsh-tool-web'
       config:
