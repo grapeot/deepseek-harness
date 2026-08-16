@@ -158,9 +158,12 @@ jobs:
       - name: Install (immutable)
         run: pnpm install --frozen-lockfile
 
-      # Snapshot, web e2e, and artifact gates need the 16-core larger runner.
-      # Keep lint/duplication so the Tavily clone and oxlint errors still fail
-      # the job; re-enable check:ci:consumers when a larger runner is available.
+      # Type-aware oxlint reads Host .d.ts files; without this build it reports
+      # `error` types across client packages. Snapshot, web e2e, and artifact
+      # gates stay off on the 4-core hosted runner.
+      - name: Build host libs
+        run: pnpm run build:lib:host
+
       - name: Run lint and duplication only
         run: pnpm run check:ci:lint:contracts-ready
 
