@@ -78,6 +78,7 @@ export function apply(ctx: Context, config: Config): void {
   const apiKeyEnv = credentialRef(config.apiKeyEnv ?? DEFAULT_API_KEY_ENV)
   ctx.web.registerSearchProvider(new TavilySearchProvider(() => ({
     ...config.apiKey !== undefined && config.apiKey.length > 0 ? { apiKey: config.apiKey } : {},
+    /* jscpd:ignore-start -- same seam-or-environment resolve as web-search-deepseek */
     resolveApiKey: async () => {
       const credentials = ctx.get('credentials')
       if (credentials !== undefined) return (await credentials.resolve(apiKeyEnv))?.value
@@ -85,6 +86,7 @@ export function apply(ctx: Context, config: Config): void {
       const ambient = launchEnvironmentOf(ctx).get(apiKeyEnv)
       return ambient !== undefined && ambient.value.length > 0 ? ambient.value : undefined
     },
+    /* jscpd:ignore-end */
     apiKeyEnv,
     baseURL: config.baseURL
       ?? launchEnvironmentOf(ctx).get(SEARCH_BASE_URL_ENV)?.value

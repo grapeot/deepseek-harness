@@ -165,7 +165,9 @@ describe('TavilySearchProvider.search', () => {
     vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       if (init?.signal !== undefined) {
         return await new Promise<Response>((_resolve, reject) => {
-          init.signal!.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')), { once: true })
+          init.signal!.addEventListener('abort', () => {
+            reject(new DOMException('aborted', 'AbortError'))
+          }, { once: true })
         })
       }
       return jsonResponse(searchResponse())
@@ -186,7 +188,9 @@ describe('TavilySearchProvider.search', () => {
     const controller = new AbortController()
     vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) =>
       new Promise<Response>((_resolve, reject) => {
-        init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')), { once: true })
+        init?.signal?.addEventListener('abort', () => {
+          reject(new DOMException('aborted', 'AbortError'))
+        }, { once: true })
       }),
     ))
     const pending = searchProvider(options).search({ query: 'q' }, controller.signal)
