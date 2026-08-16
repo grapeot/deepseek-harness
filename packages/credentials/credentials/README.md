@@ -31,7 +31,7 @@ The shadowing rule on `set`/`unset` is deliberate fail-loud: when a read-only so
 
 ## Providers
 
-[`dsh-credentials-local`](../credentials-local/README.md) layers the inherited process environment over its managed `$DSH_HOME/.credentials.yaml` document, with the launcher's project and user `.env` layers as fallbacks. The seam shape leaves room for keyring-, helper-command-, and KMS-backed providers; a remote settings provider never needs to carry secrets.
+[`dsh-credentials-local`](../credentials-local/README.md) layers the inherited process environment over dynamic sources (see [`dsh-credentials-oauth`](../credentials-oauth/README.md)) and its managed `$DSH_HOME/.credentials.yaml` document, with the launcher's project and user `.env` layers as fallbacks. Dynamic sources register through `ctx.credentialSources.register(source)`. The seam shape leaves room for keyring-, helper-command-, and KMS-backed providers; a remote settings provider never needs to carry secrets.
 
 ## Model Experience
 

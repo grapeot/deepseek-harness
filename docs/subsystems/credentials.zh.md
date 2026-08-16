@@ -24,7 +24,7 @@ type CredentialRef = Branded<'CredentialRef'>
 interface ResolvedCredential {
   /** The non-empty secret value. */
   value: string
-  /** Provider-defined source layer id (the local provider uses `env`, `file`, `project-env`, and `user-env`). */
+  /** Provider-defined source layer id (the local provider uses `env`, `oauth`, `file`, `project-env`, and `user-env`). */
   source: string
 }
 ```
@@ -43,6 +43,41 @@ interface CredentialInfo {
   /** Whether {@link CredentialProvider.set} would currently succeed for this reference. */
   writable: boolean
 }
+```
+
+## 动态 source
+
+source 对其拥有的引用回答 `resolve` 与 `describe`，并通过 `ctx.credentialSources` 注册。本地提供方把已注册 source 折进继承环境与托管文件之间。两个 source 声称同一个引用会在注册时被拒绝。
+
+```ts type-equiv
+/**
+ * One resolvable credential source. `resolve` and `describe` cover only the
+ * references listed in {@link CredentialSource.refs}; the registry rejects a
+ * second source that claims any of the same references.
+ */
+interface CredentialSource {
+  /** Diagnostic id such as `oauth:xai`. */
+  readonly id: string
+  /** References this source owns exclusively. */
+  readonly refs: readonly CredentialRef[]
+  /**
+   * Resolve one owned reference.
+   * @param ref - the reference; callers only pass a member of {@link refs}.
+   * @returns the value and source id, or `undefined` while unconfigured.
+   */
+  resolve(ref: CredentialRef): Promise<ResolvedCredential | undefined>
+  /**
+   * Describe one owned reference without exposing the value.
+   * @param ref - the reference; callers only pass a member of {@link refs}.
+   * @returns configured state; `writable` is always false.
+   */
+  describe(ref: CredentialRef): Promise<CredentialInfo>
+}
+```
+
+```ts type-equiv
+/** Called when a source registers; throw to reject the registration. */
+type CredentialSourceValidator = (source: CredentialSource) => void
 ```
 
 ## 已提交的变更
@@ -99,9 +134,51 @@ abstract set(ref: CredentialRef, value: string): Promise<void>
  * @param ref - the reference to remove.
  */
 abstract unset(ref: CredentialRef): Promise<void>
+
+/**
+ * Fan `credentials/updated` after a committed configured-ness change that
+ * did not go through {@link set} or {@link unset} — a dynamic source's login
+ * or logout. Silent value rotation does not call this: consumers re-resolve
+ * per operation.
+ * @param ref - the reference whose configured-ness changed.
+ */
+announceUpdated(ref: CredentialRef): void
 ```
 
-Source: [`packages/credentials/credentials/src/index.ts:60`](../../packages/credentials/credentials/src/index.ts)
+Source: [`packages/credentials/credentials/src/index.ts:67`](../../packages/credentials/credentials/src/index.ts)
+
+<a id="ctxcredentialsources--credentialsourceregistry"></a>
+
+### `ctx.credentialSources` — `CredentialSourceRegistry`
+
+Registry of dynamic credential sources. Registration is an effect: the returned disposer unregisters the source. Two sources claiming one reference reject at registration.
+
+```ts cordis-catalog
+/**
+ * Register a source for the lifetime of the calling fiber.
+ * @param source - the source; its refs must not overlap an already-registered source.
+ * @returns the disposer that unregisters this source.
+ */
+register(source: CredentialSource): () => void
+
+/**
+ * Install a validator that runs before a source is admitted. The local
+ * provider uses this to reject a source whose reference already has a
+ * stored-file entry.
+ * @param validate - throws to refuse the source.
+ * @returns the disposer that removes this validator.
+ */
+addValidator(validate: CredentialSourceValidator): () => void
+
+/**
+ * Find the source that owns a reference.
+ * @param ref - the reference to look up.
+ * @returns the owning source, or `undefined` when none is registered.
+ */
+lookup(ref: CredentialRef): CredentialSource | undefined
+```
+
+Source: [`packages/credentials/credentials/src/sources.ts:52`](../../packages/credentials/credentials/src/sources.ts)
 
 <a id="credentials-events"></a>
 

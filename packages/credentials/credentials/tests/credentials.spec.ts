@@ -61,6 +61,14 @@ describe('the credentials seam through the memory provider', () => {
     expect(events).toEqual([])
   })
 
+  it('announceUpdated fans credentials/updated for a source login', async () => {
+    const ctx = await boot()
+    const events: CredentialRef[] = []
+    ctx.on('credentials/updated', ref => void events.push(ref))
+    ctx.credentials.announceUpdated(REF)
+    expect(events).toEqual([REF])
+  })
+
   it('removes the service with its fiber', async () => {
     const ctx = new Context()
     const fiber = await ctx.plugin(MemoryCredentials)

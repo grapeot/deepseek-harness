@@ -1601,6 +1601,16 @@
       "source": "packages/credentials/credentials/src/index.ts"
     },
     {
+      "doc": "docs/subsystems/credentials.md",
+      "symbol": "CredentialSource",
+      "source": "packages/credentials/credentials/src/sources.ts"
+    },
+    {
+      "doc": "docs/subsystems/credentials.md",
+      "symbol": "CredentialSourceValidator",
+      "source": "packages/credentials/credentials/src/sources.ts"
+    },
+    {
       "doc": "docs/subsystems/settings.md",
       "symbol": "SettingsDescribeOptions",
       "source": "packages/settings/settings/src/index.ts"

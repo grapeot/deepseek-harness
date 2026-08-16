@@ -565,7 +565,36 @@ export interface Config {
 }
 ```
 
-Source: [`packages/credentials/credentials-local/src/index.ts:55`](../packages/credentials/credentials-local/src/index.ts)
+Source: [`packages/credentials/credentials-local/src/index.ts:56`](../packages/credentials/credentials-local/src/index.ts)
+
+<a id="deepseek-aidsh-credentials-oauth"></a>
+
+## `@deepseek-ai/dsh-credentials-oauth`
+
+Requires: `credentials` · `credentialSources`
+
+```ts config-catalog
+/** Plugin config (all optional — empty `providers` mounts dormant). */
+export interface Config {
+  /** Store path; defaults to `.oauth-credentials.json` under the harness home. */
+  path?: string
+  /** Harness home used when `path` is omitted; defaults to `$DSH_HOME` or `~/.dsh`. */
+  dshHome?: string
+  /**
+   * Flows to mount, keyed by shipped id. Omission or `{}` mounts zero sources.
+   * Each entry's `credentialRef` defaults to `<FLOW>_OAUTH_ACCESS`.
+   */
+  providers?: Record<string, OAuthProviderConfig>
+}
+
+/** One mounted flow's optional reference override. */
+export interface OAuthProviderConfig {
+  /** Credential reference this flow owns; defaults to `<FLOW>_OAUTH_ACCESS`. */
+  credentialRef?: string
+}
+```
+
+Source: [`packages/credentials/credentials-oauth/src/index.ts:43`](../packages/credentials/credentials-oauth/src/index.ts)
 
 <a id="deepseek-aidsh-e2b"></a>
 

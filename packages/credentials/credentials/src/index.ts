@@ -12,6 +12,13 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import type { CredentialRef } from './types.ts'
 
 export type { CredentialRef } from './types.ts'
+export {
+  CredentialSourceRegistry,
+} from './sources.ts'
+export type {
+  CredentialSource,
+  CredentialSourceValidator,
+} from './sources.ts'
 
 const REF_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/
 
@@ -31,7 +38,7 @@ export function credentialRef(value: string): CredentialRef {
 export interface ResolvedCredential {
   /** The non-empty secret value. */
   value: string
-  /** Provider-defined source layer id (the local provider uses `env`, `file`, `project-env`, and `user-env`). */
+  /** Provider-defined source layer id (the local provider uses `env`, `oauth`, `file`, `project-env`, and `user-env`). */
   source: string
 }
 
@@ -97,6 +104,17 @@ export abstract class CredentialProvider extends Service {
    * @param ref - the reference to remove.
    */
   abstract unset(ref: CredentialRef): Promise<void>
+
+  /**
+   * Fan `credentials/updated` after a committed configured-ness change that
+   * did not go through {@link set} or {@link unset} — a dynamic source's login
+   * or logout. Silent value rotation does not call this: consumers re-resolve
+   * per operation.
+   * @param ref - the reference whose configured-ness changed.
+   */
+  announceUpdated(ref: CredentialRef): void {
+    this.notifyUpdated(ref)
+  }
 
   /* jscpd:ignore-start -- deliberate symmetry with the settings seam's commit
      fan-out: the contained-dispatch shape is the reviewed listener-lifecycle
