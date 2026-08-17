@@ -62,6 +62,13 @@ interface Booted {
   agent: Agent
 }
 
+function commandKindText(
+  result: { result?: { kind: string; text?: string } } | undefined,
+): { kind?: string; text: string } {
+  const value = result?.result
+  return { kind: value?.kind, text: typeof value?.text === 'string' ? value.text : '' }
+}
+
 async function boot(options: {
   flow?: OAuthFlow
   providers?: Record<string, OAuthProviderConfig>
@@ -97,8 +104,8 @@ describe('flow helpers', () => {
 
   it('loads the shipped xai flow from pi-ai', async () => {
     const flow = await loadBuiltInFlow('xai')
-    expect(flow.login).toBeTypeOf('function')
-    expect(flow.refresh).toBeTypeOf('function')
+    expect(typeof flow.login).toBe('function')
+    expect(typeof flow.refresh).toBe('function')
     await expect(loadBuiltInFlow('nope')).rejects.toThrow(/unknown flow/)
   })
 
@@ -174,8 +181,9 @@ describe('applyOAuth', () => {
     const dir = await tempDir()
     const ctx = new Context()
     await ctx.plugin(LocalCredentialProvider, { path: join(dir, '.credentials.yaml'), watch: false })
-    expect(() => applyOAuth(ctx, { providers: { nope: {} } }, async () => fakeFlow()))
-      .toThrow(/unknown flow/)
+    expect(() => {
+      applyOAuth(ctx, { providers: { nope: {} } }, async () => fakeFlow())
+    }).toThrow(/unknown flow/)
   })
 
   it('resolves undefined until login, then the live access token', async () => {
@@ -234,14 +242,16 @@ describe('applyOAuth', () => {
 
   it('reports status, logout, and unknown flow errors', async () => {
     const { ctx, agent } = await boot()
-    const empty = await ctx.commands.execute(agent, '/oauth status', new AbortController().signal)
-    expect(empty?.result).toMatchObject({ kind: 'success', text: expect.stringContaining('not connected') })
+    const empty = commandKindText(await ctx.commands.execute(agent, '/oauth status', new AbortController().signal))
+    expect(empty.kind).toBe('success')
+    expect(empty.text).toContain('not connected')
     await ctx.commands.execute(agent, '/oauth login xai', new AbortController().signal)
     await vi.waitFor(async () => {
       expect((await ctx.credentials.resolve(REF))?.value).toBe('access-live')
     })
-    const connected = await ctx.commands.execute(agent, '/oauth status xai', new AbortController().signal)
-    expect(connected?.result).toMatchObject({ kind: 'success', text: expect.stringContaining('connected') })
+    const connected = commandKindText(await ctx.commands.execute(agent, '/oauth status xai', new AbortController().signal))
+    expect(connected.kind).toBe('success')
+    expect(connected.text).toContain('connected')
     const loggedOut = await ctx.commands.execute(agent, '/oauth logout xai', new AbortController().signal)
     expect(loggedOut?.result).toMatchObject({ kind: 'success' })
     expect(await ctx.credentials.resolve(REF)).toBeUndefined()
@@ -271,8 +281,9 @@ describe('applyOAuth', () => {
     })
     const login = ctx.commands.execute(agent, '/oauth login xai', new AbortController().signal)
     await vi.waitFor(async () => {
-      const status = await ctx.commands.execute(agent, '/oauth status', new AbortController().signal)
-      expect(status?.result).toMatchObject({ kind: 'success', text: expect.stringContaining('pending') })
+      const status = commandKindText(await ctx.commands.execute(agent, '/oauth status', new AbortController().signal))
+      expect(status.kind).toBe('success')
+      expect(status.text).toContain('pending')
     })
     release(tokens('access-later'))
     await login
@@ -297,8 +308,9 @@ describe('applyOAuth', () => {
     })
     await ctx.commands.execute(agent, '/oauth login xai', new AbortController().signal)
     await vi.waitFor(async () => {
-      const status = await ctx.commands.execute(agent, '/oauth status', new AbortController().signal)
-      expect(status?.result).toMatchObject({ kind: 'success', text: expect.stringContaining('failed') })
+      const status = commandKindText(await ctx.commands.execute(agent, '/oauth status', new AbortController().signal))
+      expect(status.kind).toBe('success')
+      expect(status.text).toContain('failed')
     })
   })
 
@@ -401,8 +413,9 @@ describe('applyOAuth', () => {
     })
     await ctx.commands.execute(agent, '/oauth login xai', new AbortController().signal)
     await vi.waitFor(async () => {
-      const status = await ctx.commands.execute(agent, '/oauth status', new AbortController().signal)
-      expect(status?.result).toMatchObject({ kind: 'success', text: expect.stringContaining('failed') })
+      const status = commandKindText(await ctx.commands.execute(agent, '/oauth status', new AbortController().signal))
+      expect(status.kind).toBe('success')
+      expect(status.text).toContain('failed')
     })
   })
 
@@ -427,7 +440,7 @@ describe('applyOAuth', () => {
   it('does not mark a superseded pre-notify login as the current failure', async () => {
     let releaseFirst!: () => void
     const firstHeld = new Promise<OAuthTokens>((_resolve, reject) => {
-      releaseFirst = () => reject(new Error('first aborted'))
+      releaseFirst = () => { reject(new Error('first aborted')) }
     })
     let logins = 0
     const { ctx, agent } = await boot({
@@ -448,7 +461,9 @@ describe('applyOAuth', () => {
     const first = ctx.commands.execute(agent, '/oauth login xai', new AbortController().signal)
     await vi.waitFor(() => { expect(logins).toBe(1) })
     const second = await ctx.commands.execute(agent, '/oauth login xai', new AbortController().signal)
-    expect(second?.result).toMatchObject({ kind: 'success', text: expect.stringContaining('SECOND') })
+    const secondText = commandKindText(second)
+    expect(secondText.kind).toBe('success')
+    expect(secondText.text).toContain('SECOND')
     releaseFirst()
     expect((await first)?.result).toMatchObject({ kind: 'error' })
     await vi.waitFor(async () => {
@@ -466,8 +481,9 @@ describe('applyOAuth', () => {
     })
     const result = await ctx.commands.execute(agent, '/oauth login xai', new AbortController().signal)
     expect(result?.result).toMatchObject({ kind: 'error', text: 'device request failed' })
-    const status = await ctx.commands.execute(agent, '/oauth status xai', new AbortController().signal)
-    expect(status?.result).toMatchObject({ kind: 'success', text: expect.stringContaining('failed') })
+    const status = commandKindText(await ctx.commands.execute(agent, '/oauth status xai', new AbortController().signal))
+    expect(status.kind).toBe('success')
+    expect(status.text).toContain('failed')
   })
 
   it('returns an error when login completes without a device code', async () => {
@@ -477,7 +493,9 @@ describe('applyOAuth', () => {
       }),
     })
     const result = await ctx.commands.execute(agent, '/oauth login xai', new AbortController().signal)
-    expect(result?.result).toMatchObject({ kind: 'error', text: expect.stringContaining('without a device code') })
+    const loginResult = commandKindText(result)
+    expect(loginResult.kind).toBe('error')
+    expect(loginResult.text).toContain('without a device code')
   })
 
   it('does not resurrect a session when refresh overlaps logout', async () => {
@@ -535,7 +553,7 @@ describe('applyOAuth', () => {
     expect(await ctx.credentials.resolve(REF)).toBeUndefined()
   })
 
-  it('records a persist failure after login completes', async () => {
+  it.skipIf(process.platform === 'win32')('records a persist failure after login completes', async () => {
     const { ctx, agent, storePath } = await boot({
       flow: fakeFlow({
         login: async (interaction) => {
@@ -556,7 +574,9 @@ describe('applyOAuth', () => {
       await ctx.commands.execute(agent, '/oauth login xai', new AbortController().signal)
       await vi.waitFor(async () => {
         const status = await ctx.commands.execute(agent, '/oauth status xai', new AbortController().signal)
-        expect(status?.result).toMatchObject({ kind: 'success', text: expect.stringContaining('failed') })
+        const persistStatus = commandKindText(status)
+        expect(persistStatus.kind).toBe('success')
+        expect(persistStatus.text).toContain('failed')
       })
     } finally {
       await chmod(join(storePath, '..'), 0o700)
@@ -565,7 +585,9 @@ describe('applyOAuth', () => {
 
   it('ignores a post-notify login rejection after logout', async () => {
     let rejectLogin!: (error: Error) => void
-    const held = new Promise<OAuthTokens>((_resolve, reject) => { rejectLogin = reject })
+    const held = new Promise<OAuthTokens>((_resolve, reject) => {
+      rejectLogin = (error) => { reject(error) }
+    })
     const { ctx, agent } = await boot({
       flow: fakeFlow({
         login: async (interaction) => {
@@ -584,7 +606,9 @@ describe('applyOAuth', () => {
     rejectLogin(new Error('denied after logout'))
     await new Promise(resolve => setTimeout(resolve, 20))
     const status = await ctx.commands.execute(agent, '/oauth status xai', new AbortController().signal)
-    expect(status?.result).toMatchObject({ kind: 'success', text: expect.stringContaining('not connected') })
+    const logoutStatus = commandKindText(status)
+    expect(logoutStatus.kind).toBe('success')
+    expect(logoutStatus.text).toContain('not connected')
   })
 
   it('unregisters the source when the oauth fiber disposes', async () => {
@@ -630,9 +654,11 @@ describe('local provider plus oauth source', () => {
     await writeFile(creds, 'XAI_OAUTH_ACCESS: leftover\n', { mode: 0o600 })
     const ctx = new Context()
     await ctx.plugin(LocalCredentialProvider, { path: creds, watch: false })
-    expect(() => applyOAuth(ctx, {
-      path: join(dir, '.oauth-credentials.json'),
-      providers: { xai: {} },
-    }, async () => fakeFlow())).toThrow(/stored in/)
+    expect(() => {
+      applyOAuth(ctx, {
+        path: join(dir, '.oauth-credentials.json'),
+        providers: { xai: {} },
+      }, async () => fakeFlow())
+    }).toThrow(/stored in/)
   })
 })

@@ -189,6 +189,15 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Configuration carries references to secrets; providers own the values. Consumers resolve per operation, so a rotated credential reaches the very next request; the web gateway exposes value-free views and write-only storage.',
   },
   {
+    key: 'credentialSources',
+    pkg: 'credentials',
+    title: 'Dynamic credential-source registry',
+    mode: 'core',
+    implementations: ['credentials-oauth'],
+    consumers: ['credentials-local'],
+    note: 'Sources register resolve/describe for the references they own; the local provider folds them between the inherited environment and the managed file.',
+  },
+  {
     key: 'sessionTelemetry',
     pkg: 'session-telemetry',
     title: 'Session telemetry seam',
