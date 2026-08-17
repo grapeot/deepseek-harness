@@ -43,4 +43,5 @@
 - **xAI 按订阅档位门控 OAuth API 访问** — 登录可能成功而推理返回 403；api-key 路线仍是回退。
 - **flow 搭乘 pi-ai 注册的 OAuth client id** — xAI 对第三方 client 的门控变化会在上游打断登录。
 - **没有 headless 登录路径** — `/oauth` 需要交互式命令适配器。`dsh oauth` CLI 入口推迟。
+- **没有组装后的 `/oauth` snapshot** — 包测试用假 flow 覆盖各动词。无密钥的 headless 或 ACP 记录等待 `dsh oauth` 或设置页。
 - **未发布 `openai-codex` 与 `anthropic` 适配器** — 机制是通用的；这些 flow 属于后续变更。

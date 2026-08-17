@@ -76,4 +76,4 @@ flow 的 client id、scope 集合与怪癖（xAI 刷新时可能省略 `refresh_
 
 ## Testing
 
-包测试覆盖对着假 flow 的 `/oauth login xai`（验证 URL 与 code、完成、status、pending、失败）、先持久化再返回的 single-flight 刷新、带重新登录指引的被拒刷新、对被拥有 reference 的 `set`/`unset`，以及 source 注册时的文件层冲突。`loadBuiltInFlow('xai')` 加载真实的 pi-ai 对象。真实 SuperGrok 登录与一次活 Grok completion 仍是记在 PR 里的手工检查，不是 keyless 门。
+包测试覆盖对着假 flow 的 `/oauth login xai`（验证 URL 与 code、完成、status、pending、失败、notify 前拒绝、无 device code 即完成）、先持久化再返回的 single-flight 刷新、带重新登录指引的被拒刷新、登出压过进行中的 refresh 或 login persist、对被拥有 reference 的 `set`/`unset`、随贡献 fiber 卸载的 source，以及 source 注册时的文件层冲突。`loadBuiltInFlow('xai')` 加载真实的 pi-ai 对象。真实 SuperGrok 登录与一次活 Grok completion 仍是记在 PR 里的手工检查，不是 keyless 门。

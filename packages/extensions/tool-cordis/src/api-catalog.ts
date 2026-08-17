@@ -2367,8 +2367,8 @@ export const EVENT_API: readonly EventApiEntry[] = [
     name: 'credentials/updated',
     mode: 'emit',
     signature: '\'credentials/updated\'(ref: CredentialRef): void',
-    summary: 'Committed change to a provider-managed credential source: a `set`, an `unset`, or an external edit observed in storage.',
-    description: 'Committed change to a provider-managed credential source: a `set`, an `unset`, or an external edit observed in storage. Ambient process-environment changes are not observable and never emit. Listener failures are contained and logged — a sync throw and an async rejection alike — without changing the committed operation\'s outcome, except `INVARIANT`-coded failures, which rethrow after every listener ran; that rethrow reaches the emitter only from synchronous listeners, so invariant checks on this event must not be async functions.',
+    summary: 'Committed change to a provider-managed credential source: a `set`, an `unset`, an external edit observed in storage, or an OAuth login or logout that changes configured-ness.',
+    description: 'Committed change to a provider-managed credential source: a `set`, an `unset`, an external edit observed in storage, or an OAuth login or logout that changes configured-ness. Silent token refresh does not emit. Ambient process-environment changes are not observable and never emit. Listener failures are contained and logged — a sync throw and an async rejection alike — without changing the committed operation\'s outcome, except `INVARIANT`-coded failures, which rethrow after every listener ran; that rethrow reaches the emitter only from synchronous listeners, so invariant checks on this event must not be async functions.',
     parameters: [{ name: 'ref', description: 'the reference whose stored value changed.' }],
   },
   {

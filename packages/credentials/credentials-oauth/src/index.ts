@@ -94,7 +94,14 @@ export function applyOAuth(ctx: Context, config: Config, resolveFlow: ResolveFlo
   const providers = config.providers ?? {}
   const mounted = new Map<string, MountedFlow>()
   const logins = new Map<string, LoginState>()
-  const inflight = new Map<string, Promise<string>>()
+  const inflight = new Map<string, Promise<string | undefined>>()
+  const generations = new Map<string, number>()
+
+  function bumpGeneration(id: string): number {
+    const next = (generations.get(id) ?? 0) + 1
+    generations.set(id, next)
+    return next
+  }
 
   for (const [id, entry] of Object.entries(providers)) {
     if (!isBuiltinFlowId(id)) {
@@ -135,7 +142,7 @@ export function applyOAuth(ctx: Context, config: Config, resolveFlow: ResolveFlo
     }
   }
 
-  function refreshSingleFlight(id: string, record: StoredFlow): Promise<string> {
+  function refreshSingleFlight(id: string, record: StoredFlow): Promise<string | undefined> {
     const existing = inflight.get(id)
     if (existing !== undefined) return existing
     const pending = refreshAndPersist(id, record).finally(() => inflight.delete(id))
@@ -143,7 +150,8 @@ export function applyOAuth(ctx: Context, config: Config, resolveFlow: ResolveFlo
     return pending
   }
 
-  async function refreshAndPersist(id: string, record: StoredFlow): Promise<string> {
+  async function refreshAndPersist(id: string, record: StoredFlow): Promise<string | undefined> {
+    const generation = generations.get(id) ?? 0
     const flow = await flowOf(id)
     let next: OAuthTokens
     try {
@@ -160,7 +168,12 @@ export function applyOAuth(ctx: Context, config: Config, resolveFlow: ResolveFlo
       )
     }
     const stored = toStored(next)
-    await store.writeFlow(id, stored)
+    const wrote = await store.writeFlow(id, stored, current => (
+      (generations.get(id) ?? 0) === generation
+      && current !== undefined
+      && current.refresh === record.refresh
+    ))
+    if (!wrote) return (await store.read()).flows[id]?.access
     return stored.access
   }
 
@@ -177,37 +190,84 @@ export function applyOAuth(ctx: Context, config: Config, resolveFlow: ResolveFlo
     ctx.credentials.announceUpdated(ref)
   }
 
+  function isCurrent(id: string, generation: number): boolean {
+    return generations.get(id) === generation
+  }
+
+  function finishLogin(
+    id: string,
+    generation: number,
+    ref: CredentialRef,
+    login: Promise<OAuthTokens>,
+    abort: AbortController,
+  ): void {
+    void (async () => {
+      try {
+        const tokens = await login
+        if (abort.signal.aborted || !isCurrent(id, generation)) return
+        const wrote = await store.writeFlow(id, toStored(tokens), () => isCurrent(id, generation))
+        /* v8 ignore next -- logout between the abort check and the store lock */
+        if (!wrote) return
+        logins.set(id, { kind: 'idle' })
+        announce(ref)
+      } catch (error) {
+        if (abort.signal.aborted || !isCurrent(id, generation)) return
+        const message = error instanceof Error ? error.message : 'login failed'
+        logins.set(id, { kind: 'failed', message })
+      }
+    })()
+  }
+
   async function startLogin(id: string): Promise<CommandResult> {
     const entry = mounted.get(id)
     if (entry === undefined) {
       return { kind: 'error', text: `Unknown OAuth flow "${id}".` }
     }
     const previous = logins.get(id)
-    if (previous?.kind === 'pending') previous.abort.abort()
+    if (previous?.kind === 'pending') previous.abort.abort('superseded')
 
+    const generation = bumpGeneration(id)
     const abort = new AbortController()
+    ctx.effect(() => () => abort.abort(), `credentials-oauth.login(${id})`)
     const flow = await flowOf(id)
-    let notify!: (event: DeviceCodeEvent) => void
-    const notified = new Promise<DeviceCodeEvent>((resolve, reject) => {
-      /* v8 ignore next -- abort-before-notify is not a command path */
-      const onAbort = (): void => reject(abortError(abort.signal))
-      abort.signal.addEventListener('abort', onAbort, { once: true })
-      notify = (event) => {
-        abort.signal.removeEventListener('abort', onAbort)
-        resolve(event)
-      }
+    let notified = false
+    let settleDevice!: (event: DeviceCodeEvent) => void
+    let failDevice!: (error: unknown) => void
+    const deviceWait = new Promise<DeviceCodeEvent>((resolve, reject) => {
+      settleDevice = resolve
+      failDevice = reject
     })
+    abort.signal.addEventListener('abort', () => failDevice(abortError(abort.signal)), { once: true })
 
     const login = flow.login({
       signal: abort.signal,
       /* v8 ignore next -- xai device-code login never prompts */
       prompt: () => Promise.reject(new Error('credentials-oauth: login does not prompt')),
       notify: (event) => {
-        if (event.type === 'device_code') notify(event as unknown as DeviceCodeEvent)
+        if (event.type !== 'device_code') return
+        notified = true
+        settleDevice(event as unknown as DeviceCodeEvent)
       },
     })
 
-    const device = await notified
+    void login.then(
+      () => {
+        if (!notified) failDevice(new Error('credentials-oauth: login completed without a device code'))
+      },
+      (error: unknown) => {
+        if (!notified) failDevice(error)
+      },
+    )
+
+    let device: DeviceCodeEvent
+    try {
+      device = await deviceWait
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'login failed'
+      if (isCurrent(id, generation)) logins.set(id, { kind: 'failed', message })
+      return { kind: 'error', text: message }
+    }
+
     logins.set(id, {
       kind: 'pending',
       userCode: device.userCode,
@@ -215,23 +275,7 @@ export function applyOAuth(ctx: Context, config: Config, resolveFlow: ResolveFlo
       expiresAt: Date.now() + (device.expiresInSeconds ?? 0) * 1000,
       abort,
     })
-
-    ctx.effect(function* () {
-      /* v8 ignore next -- plugin unload aborts an in-flight login */
-      yield () => abort.abort()
-      void login.then(async (tokens) => {
-        /* v8 ignore next -- logout during pending aborts before persist */
-        if (abort.signal.aborted) return
-        await store.writeFlow(id, toStored(tokens))
-        logins.set(id, { kind: 'idle' })
-        announce(entry.ref)
-      }, (error: unknown) => {
-        /* v8 ignore next -- logout during pending aborts before the failure handler */
-        if (abort.signal.aborted) return
-        const message = error instanceof Error ? error.message : 'login failed'
-        logins.set(id, { kind: 'failed', message })
-      })
-    }, `credentials-oauth.login(${id})`)
+    finishLogin(id, generation, entry.ref, login, abort)
 
     return {
       kind: 'success',
@@ -247,8 +291,9 @@ export function applyOAuth(ctx: Context, config: Config, resolveFlow: ResolveFlo
     if (entry === undefined) {
       return { kind: 'error', text: `Unknown OAuth flow "${id}".` }
     }
+    bumpGeneration(id)
     const previous = logins.get(id)
-    if (previous?.kind === 'pending') previous.abort.abort()
+    if (previous?.kind === 'pending') previous.abort.abort('logout')
     logins.set(id, { kind: 'idle' })
     const before = await store.read()
     const wasConfigured = before.flows[id] !== undefined
@@ -295,12 +340,11 @@ function formatStatus(id: string, record: StoredFlow | undefined, login: LoginSt
   return `${id}: connected (expires ${new Date(record.expiresAt).toISOString()})`
 }
 
-/* v8 ignore start -- abort-before-notify is not reachable from /oauth once the device code has been emitted */
 function abortError(signal: AbortSignal): Error {
   if (signal.reason instanceof Error) return signal.reason
+  /* v8 ignore next -- abort() is called with a string reason or an Error */
   return new Error(typeof signal.reason === 'string' ? signal.reason : 'oauth login aborted')
 }
-/* v8 ignore stop */
 
 /** Parse `/oauth` arguments and dispatch. */
 export async function handleOAuthCommand(

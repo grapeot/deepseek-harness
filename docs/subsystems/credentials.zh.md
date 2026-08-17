@@ -82,7 +82,7 @@ type CredentialSourceValidator = (source: CredentialSource) => void
 
 ## 已提交的变更
 
-`credentials/updated (ref)` 在提供方管理的来源发生已提交变更后发出——`set`、`unset` 或在存储中观察到的外部编辑。进程环境自身的变化不可观测，永不发出事件。消费方不需要该事件（它们按操作重新解析）；它服务于配置界面刷新「已配置」徽标。
+`credentials/updated (ref)` 在提供方管理的来源发生已提交变更后发出——`set`、`unset`、在存储中观察到的外部编辑，或改变已配置状态的 OAuth 登录 / 登出。静默 token 刷新不发出事件。进程环境自身的变化不可观测，永不发出事件。消费方不需要该事件（它们按操作重新解析）；它服务于配置界面刷新「已配置」徽标。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -188,13 +188,14 @@ Source: [`packages/credentials/credentials/src/sources.ts:52`](../../packages/cr
 
 #### `credentials/updated` — emit
 
-Committed change to a provider-managed credential source: a `set`, an `unset`, or an external edit observed in storage. Ambient process-environment changes are not observable and never emit. Listener failures are contained and logged — a sync throw and an async rejection alike — without changing the committed operation's outcome, except `INVARIANT`-coded failures, which rethrow after every listener ran; that rethrow reaches the emitter only from synchronous listeners, so invariant checks on this event must not be async functions.
+Committed change to a provider-managed credential source: a `set`, an `unset`, an external edit observed in storage, or an OAuth login or logout that changes configured-ness. Silent token refresh does not emit. Ambient process-environment changes are not observable and never emit. Listener failures are contained and logged — a sync throw and an async rejection alike — without changing the committed operation's outcome, except `INVARIANT`-coded failures, which rethrow after every listener ran; that rethrow reaches the emitter only from synchronous listeners, so invariant checks on this event must not be async functions.
 
 ```ts cordis-catalog
 /**
  * Committed change to a provider-managed credential source: a `set`, an
- * `unset`, or an external edit observed in storage. Ambient
- * process-environment changes are not observable and never emit. Listener
+ * `unset`, an external edit observed in storage, or an OAuth login or
+ * logout that changes configured-ness. Silent token refresh does not emit.
+ * Ambient process-environment changes are not observable and never emit. Listener
  * failures are contained and logged — a sync throw and an async rejection
  * alike — without changing the committed operation's outcome, except
  * `INVARIANT`-coded failures, which rethrow after every listener ran;
@@ -206,5 +207,5 @@ Committed change to a provider-managed credential source: a `set`, an `unset`, o
 'credentials/updated'(ref: CredentialRef): void
 ```
 
-Source: [`packages/credentials/credentials/src/types.ts:29`](../../packages/credentials/credentials/src/types.ts)
+Source: [`packages/credentials/credentials/src/types.ts:30`](../../packages/credentials/credentials/src/types.ts)
 <!-- END GENERATED cordis-surface -->

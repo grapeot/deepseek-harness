@@ -322,10 +322,8 @@ export class LocalCredentialProvider extends CredentialProvider {
   }
 
   override async describe(ref: CredentialRef): Promise<CredentialInfo> {
-    // Only the inherited environment is unwritable: it is the one layer this
-    // process cannot edit. A user `.env` value is writable in the sense that
-    // matters — storing a key replaces it as the effective one. A dynamic
-    // source is also unwritable: set would be shadowed by the source.
+    // Env and dynamic sources are unwritable: set would be shadowed. A user
+    // `.env` value is writable because a file write replaces it.
     if (this.inherited(ref) !== undefined) {
       return { configured: true, source: 'env', writable: false }
     }

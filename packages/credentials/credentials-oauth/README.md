@@ -43,4 +43,5 @@ No direct invalidation; credentials never enter a request prefix.
 - **xAI tiers OAuth API access by subscription level** — login can succeed while inference returns 403; the api-key route remains the fallback.
 - **The flow rides pi-ai's registered OAuth client id** — xAI gating changes against third-party clients break login upstream.
 - **No headless login path** — `/oauth` needs an interactive command adapter. A `dsh oauth` CLI entry is deferred.
+- **No assembled `/oauth` snapshot** — package tests cover the verbs against a fake flow. A keyless headless or ACP transcript waits on a `dsh oauth` or settings surface.
 - **`openai-codex` and `anthropic` adapters are not shipped** — the mechanism is generic; those flows are a later change.

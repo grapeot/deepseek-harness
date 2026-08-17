@@ -33,6 +33,19 @@ describe('OAuthStore', () => {
     expect((await store.read()).flows.xai).toBeUndefined()
   })
 
+  it('skips a write when persist rejects the current record', async () => {
+    const dir = await tempDir()
+    const path = join(dir, '.oauth-credentials.json')
+    const store = new OAuthStore(path)
+    await store.writeFlow('xai', { access: 'a', refresh: 'r', expiresAt: 10, obtainedAt: 1 })
+    expect(await store.writeFlow(
+      'xai',
+      { access: 'b', refresh: 'r2', expiresAt: 20, obtainedAt: 2 },
+      current => current?.refresh === 'other',
+    )).toBe(false)
+    expect((await store.read()).flows.xai?.access).toBe('a')
+  })
+
   it('parses a document with no flows key as empty', () => {
     expect(parseOAuthStore('{"version":1}', 'store.json')).toEqual({ version: 1, flows: {} })
   })

@@ -158,14 +158,24 @@ export class OAuthStore {
   /**
    * Replace one flow's stored pair, or delete it when `record` is undefined.
    * Persist happens under the writer lock; failure rejects so a rotated
-   * refresh token cannot leave the store.
+   * refresh token cannot leave the store. `persist` runs under that lock
+   * against the on-disk record: return false to leave the document unchanged
+   * so a logout or a newer login is not overwritten.
    * @param flowId - the flow to write.
    * @param record - the new pair, or `undefined` to delete.
+   * @param persist - skip the write when this returns false.
+   * @returns whether a write happened.
    */
-  async writeFlow(flowId: string, record: StoredFlow | undefined): Promise<void> {
+  async writeFlow(
+    flowId: string,
+    record: StoredFlow | undefined,
+    persist?: (current: StoredFlow | undefined) => boolean,
+  ): Promise<boolean> {
     await mkdir(dirname(this.filename), { recursive: true, mode: 0o700 })
-    await withFileLock(this.filename, async () => {
+    return await withFileLock(this.filename, async () => {
       const current = await this.read()
+      const existing = current.flows[flowId]
+      if (persist !== undefined && !persist(existing)) return false
       const nextFlows = { ...current.flows }
       if (record === undefined) {
         const { [flowId]: _removed, ...kept } = nextFlows
@@ -176,6 +186,7 @@ export class OAuthStore {
       }
       const text = `${JSON.stringify(current, undefined, 2)}\n`
       await writeFileAtomic(this.filename, text, { mode: 0o600, dirMode: 0o700 })
+      return true
     })
   }
 }

@@ -412,17 +412,214 @@ describe('applyOAuth', () => {
     expect(ctx.credentialSources.lookup(REF)).toBeDefined()
   })
 
-  it('unregisters the source when the plugin fiber is not used — apply is effect-bound via register', async () => {
+  it('returns an error when login fails before the device code with a non-Error', async () => {
+    const { ctx, agent } = await boot({
+      flow: fakeFlow({
+        login: async () => {
+          throw 'device down'
+        },
+      }),
+    })
+    const result = await ctx.commands.execute(agent, '/oauth login xai', new AbortController().signal)
+    expect(result?.result).toMatchObject({ kind: 'error', text: 'login failed' })
+  })
+
+  it('does not mark a superseded pre-notify login as the current failure', async () => {
+    let releaseFirst!: () => void
+    const firstHeld = new Promise<OAuthTokens>((resolve, reject) => {
+      releaseFirst = () => reject(new Error('first aborted'))
+    })
+    let logins = 0
+    const { ctx, agent } = await boot({
+      flow: fakeFlow({
+        login: async (interaction) => {
+          logins += 1
+          if (logins === 1) return firstHeld
+          interaction.notify({
+            type: 'device_code',
+            userCode: 'SECOND',
+            verificationUri: 'https://auth.x.ai/device',
+            expiresInSeconds: 20,
+          })
+          return tokens('access-second')
+        },
+      }),
+    })
+    const first = ctx.commands.execute(agent, '/oauth login xai', new AbortController().signal)
+    await vi.waitFor(() => { expect(logins).toBe(1) })
+    const second = await ctx.commands.execute(agent, '/oauth login xai', new AbortController().signal)
+    expect(second?.result).toMatchObject({ kind: 'success', text: expect.stringContaining('SECOND') })
+    releaseFirst()
+    expect((await first)?.result).toMatchObject({ kind: 'error' })
+    await vi.waitFor(async () => {
+      expect((await ctx.credentials.resolve(REF))?.value).toBe('access-second')
+    })
+  })
+
+  it('returns an error when login fails before the device code', async () => {
+    const { ctx, agent } = await boot({
+      flow: fakeFlow({
+        login: async () => {
+          throw new Error('device request failed')
+        },
+      }),
+    })
+    const result = await ctx.commands.execute(agent, '/oauth login xai', new AbortController().signal)
+    expect(result?.result).toMatchObject({ kind: 'error', text: 'device request failed' })
+    const status = await ctx.commands.execute(agent, '/oauth status xai', new AbortController().signal)
+    expect(status?.result).toMatchObject({ kind: 'success', text: expect.stringContaining('failed') })
+  })
+
+  it('returns an error when login completes without a device code', async () => {
+    const { ctx, agent } = await boot({
+      flow: fakeFlow({
+        login: async () => tokens('no-device'),
+      }),
+    })
+    const result = await ctx.commands.execute(agent, '/oauth login xai', new AbortController().signal)
+    expect(result?.result).toMatchObject({ kind: 'error', text: expect.stringContaining('without a device code') })
+  })
+
+  it('does not resurrect a session when refresh overlaps logout', async () => {
+    let release!: (tokens: OAuthTokens) => void
+    const held = new Promise<OAuthTokens>((resolve) => { release = resolve })
+    let refreshing = false
+    const { ctx, agent, storePath } = await boot({
+      flow: fakeFlow({
+        refresh: async () => {
+          refreshing = true
+          return held
+        },
+      }),
+    })
+    await writeFile(storePath, `${JSON.stringify({
+      version: 1,
+      flows: {
+        xai: { access: 'stale', refresh: 'refresh-1', expiresAt: Date.now() - 1, obtainedAt: 1 },
+      },
+    })}\n`, { mode: 0o600 })
+    const resolving = ctx.credentials.resolve(REF)
+    await vi.waitFor(() => { expect(refreshing).toBe(true) })
+    const loggedOut = await ctx.commands.execute(agent, '/oauth logout xai', new AbortController().signal)
+    expect(loggedOut?.result).toMatchObject({ kind: 'success' })
+    release(tokens('resurrected', 'refresh-2'))
+    expect(await resolving).toBeUndefined()
+    expect(await ctx.credentials.resolve(REF)).toBeUndefined()
+    const stored = JSON.parse(await readFile(storePath, 'utf8')) as { flows: Record<string, unknown> }
+    expect(stored.flows.xai).toBeUndefined()
+  })
+
+  it('does not persist a login that finishes after logout', async () => {
+    let release!: (tokens: OAuthTokens) => void
+    const held = new Promise<OAuthTokens>((resolve) => { release = resolve })
+    const { ctx, agent, storePath } = await boot({
+      flow: fakeFlow({
+        login: async (interaction) => {
+          interaction.notify({
+            type: 'device_code',
+            userCode: 'PEND',
+            verificationUri: 'https://auth.x.ai/device',
+            expiresInSeconds: 20,
+          })
+          return held
+        },
+      }),
+    })
+    await ctx.commands.execute(agent, '/oauth login xai', new AbortController().signal)
+    await ctx.commands.execute(agent, '/oauth logout xai', new AbortController().signal)
+    release(tokens('too-late'))
+    await vi.waitFor(async () => {
+      const stored = JSON.parse(await readFile(storePath, 'utf8')) as { flows: Record<string, unknown> }
+      expect(stored.flows.xai).toBeUndefined()
+    })
+    expect(await ctx.credentials.resolve(REF)).toBeUndefined()
+  })
+
+  it('records a persist failure after login completes', async () => {
+    const { ctx, agent, storePath } = await boot({
+      flow: fakeFlow({
+        login: async (interaction) => {
+          interaction.notify({
+            type: 'device_code',
+            userCode: 'SAVE',
+            verificationUri: 'https://auth.x.ai/device',
+            expiresInSeconds: 20,
+          })
+          const { chmod } = await import('node:fs/promises')
+          await chmod(join(storePath, '..'), 0o555)
+          return tokens('access-live')
+        },
+      }),
+    })
+    const { chmod } = await import('node:fs/promises')
+    try {
+      await ctx.commands.execute(agent, '/oauth login xai', new AbortController().signal)
+      await vi.waitFor(async () => {
+        const status = await ctx.commands.execute(agent, '/oauth status xai', new AbortController().signal)
+        expect(status?.result).toMatchObject({ kind: 'success', text: expect.stringContaining('failed') })
+      })
+    } finally {
+      await chmod(join(storePath, '..'), 0o700)
+    }
+  })
+
+  it('ignores a post-notify login rejection after logout', async () => {
+    let rejectLogin!: (error: Error) => void
+    const held = new Promise<OAuthTokens>((_resolve, reject) => { rejectLogin = reject })
+    const { ctx, agent } = await boot({
+      flow: fakeFlow({
+        login: async (interaction) => {
+          interaction.notify({
+            type: 'device_code',
+            userCode: 'PEND',
+            verificationUri: 'https://auth.x.ai/device',
+            expiresInSeconds: 20,
+          })
+          return held
+        },
+      }),
+    })
+    await ctx.commands.execute(agent, '/oauth login xai', new AbortController().signal)
+    await ctx.commands.execute(agent, '/oauth logout xai', new AbortController().signal)
+    rejectLogin(new Error('denied after logout'))
+    await new Promise(resolve => setTimeout(resolve, 20))
+    const status = await ctx.commands.execute(agent, '/oauth status xai', new AbortController().signal)
+    expect(status?.result).toMatchObject({ kind: 'success', text: expect.stringContaining('not connected') })
+  })
+
+  it('unregisters the source when the oauth fiber disposes', async () => {
     const dir = await tempDir()
     const ctx = new Context()
-    const fiber = await ctx.plugin(LocalCredentialProvider, {
+    await ctx.plugin(LocalCredentialProvider, {
       path: join(dir, '.credentials.yaml'),
       watch: false,
     })
-    applyOAuth(ctx, { path: join(dir, '.oauth-credentials.json'), providers: { xai: {} } }, async () => fakeFlow())
-    expect(ctx.get('credentialSources')?.lookup(REF)).toBeDefined()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(CommandRuntime)
+    const held = new Promise<OAuthTokens>(() => undefined)
+    function OAuthTest(inner: Context): void {
+      applyOAuth(inner, { path: join(dir, '.oauth-credentials.json'), providers: { xai: {} } }, async () => fakeFlow({
+        login: async (interaction) => {
+          interaction.notify({
+            type: 'device_code',
+            userCode: 'PEND',
+            verificationUri: 'https://auth.x.ai/device',
+            expiresInSeconds: 20,
+          })
+          return held
+        },
+      }))
+    }
+    OAuthTest.inject = ['credentials', 'credentialSources']
+    const fiber = await ctx.plugin(OAuthTest)
+    const session = ctx.get('sessions')?.create(SessionId('oauth-dispose'))
+    const agent = { id: session?.id ?? 'oauth-dispose', session } as Agent
+    await ctx.commands.execute(agent, '/oauth login xai', new AbortController().signal)
+    expect(ctx.credentialSources.lookup(REF)).toBeDefined()
+    expect(ctx.credentials).toBeDefined()
     await fiber.dispose()
-    expect(ctx.get('credentials')).toBeUndefined()
+    expect(ctx.credentialSources.lookup(REF)).toBeUndefined()
+    expect(ctx.credentials).toBeDefined()
   })
 })
 
