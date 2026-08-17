@@ -64,7 +64,7 @@ interface Booted {
 
 function commandKindText(
   result: { result?: { kind: string; text?: string } } | undefined,
-): { kind?: string; text: string } {
+): { kind?: string | undefined; text: string } {
   const value = result?.result
   return { kind: value?.kind, text: typeof value?.text === 'string' ? value.text : '' }
 }
