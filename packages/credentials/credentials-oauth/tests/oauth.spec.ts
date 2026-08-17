@@ -426,7 +426,7 @@ describe('applyOAuth', () => {
 
   it('does not mark a superseded pre-notify login as the current failure', async () => {
     let releaseFirst!: () => void
-    const firstHeld = new Promise<OAuthTokens>((resolve, reject) => {
+    const firstHeld = new Promise<OAuthTokens>((_resolve, reject) => {
       releaseFirst = () => reject(new Error('first aborted'))
     })
     let logins = 0
