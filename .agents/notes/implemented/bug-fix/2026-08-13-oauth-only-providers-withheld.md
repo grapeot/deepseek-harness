@@ -16,7 +16,7 @@ So the page advertised, with the keyless posture its own placeholder describes, 
 
 The directory offers only what this adapter can authenticate. `catalogProviderTakesApiKey(provider)` answers whether pi-ai's installed provider for a route declares an api-key method — the one method the harness can feed, since it resolves a key through its own credential seam and hands it over as the request's `apiKey` override — and `directoryEntries()` skips the catalog routes that fail it.
 
-OAuth support is not attempted. It needs a persistent credential store, a login flow, and a surface to run it from; none of those is a release-blocking fix, and shipping the offer without them is what produced the report.
+The directory still withholds OAuth-only catalog routes. Subscription OAuth for a route that already accepts an api-key override (`xai`) is supplied by [the OAuth credential-source note](../feature/2026-08-16-oauth-credential-provider.md); `openai-codex` remains withheld because the catalog still offers no api-key method.
 
 Two boundaries keep the withholding narrow:
 

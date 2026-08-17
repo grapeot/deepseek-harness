@@ -4,6 +4,7 @@
  *
  * ```text
  * inherited process environment      (read-only, wins)
+ * > dynamic credential sources       (read-only, e.g. OAuth)
  * > $DSH_HOME/.credentials.yaml      (provider-managed, writable)
  * > <invocation cwd>/.env            (read-only fallback)
  * > $DSH_HOME/.env                   (read-only fallback)
@@ -44,8 +45,8 @@ import { Document, parseDocument, type YAMLError } from 'yaml'
 import { withFileLock, writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { canonicalizeWatchPath, resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
-import { CredentialProvider, credentialRef } from '@deepseek-ai/dsh-credentials'
-import type { CredentialInfo, CredentialRef, ResolvedCredential } from '@deepseek-ai/dsh-credentials'
+import { CredentialProvider, CredentialSourceRegistry, credentialRef } from '@deepseek-ai/dsh-credentials'
+import type { CredentialInfo, CredentialRef, CredentialSource, ResolvedCredential } from '@deepseek-ai/dsh-credentials'
 import type { LaunchEnvironmentEntry } from '@deepseek-ai/dsh-launch-environment'
 
 /** Basename of the credentials document inside the harness home. */
@@ -244,6 +245,7 @@ export class LocalCredentialProvider extends CredentialProvider {
     // Programmatic construction may bypass Schemastery normalization; resolve
     // the same defaults in one explicit step either way.
     this.spec = resolveSpec(config)
+    ctx.plugin(CredentialSourceRegistry)
   }
 
   /** The inherited-environment value for a reference, or `undefined` when empty or unset. */
@@ -270,6 +272,7 @@ export class LocalCredentialProvider extends CredentialProvider {
       await this.operations
     }
     await this.loadInitial()
+    this.ctx.get('credentialSources')?.addValidator(source => this.assertFileDoesNotClaim(source))
     if (!this.spec.watch) return
     /* jscpd:ignore-start -- same watcher discipline as settings-file by design:
        the serialized-refresh and quiesce-on-dispose shape is the reviewed
@@ -306,28 +309,31 @@ export class LocalCredentialProvider extends CredentialProvider {
     /* jscpd:ignore-end */
   }
 
-  override resolve(ref: CredentialRef): Promise<ResolvedCredential | undefined> {
+  override async resolve(ref: CredentialRef): Promise<ResolvedCredential | undefined> {
     const inherited = this.inherited(ref)
-    if (inherited !== undefined) return Promise.resolve({ value: inherited, source: 'env' })
+    if (inherited !== undefined) return { value: inherited, source: 'env' }
+    const dynamic = this.ctx.get('credentialSources')?.lookup(ref)
+    if (dynamic !== undefined) return dynamic.resolve(ref)
     const stored = this.values.get(ref)
-    if (stored !== undefined) return Promise.resolve({ value: stored, source: 'file' })
+    if (stored !== undefined) return { value: stored, source: 'file' }
     const fallback = this.dotenvFallback(ref)
-    if (fallback !== undefined) return Promise.resolve({ value: fallback.value, source: fallback.source })
-    return Promise.resolve(undefined)
+    if (fallback !== undefined) return { value: fallback.value, source: fallback.source }
+    return undefined
   }
 
-  override describe(ref: CredentialRef): Promise<CredentialInfo> {
-    // Only the inherited environment is unwritable: it is the one layer this
-    // process cannot edit. A user `.env` value is writable in the sense that
-    // matters — storing a key replaces it as the effective one.
+  override async describe(ref: CredentialRef): Promise<CredentialInfo> {
+    // Env and dynamic sources are unwritable: set would be shadowed. A user
+    // `.env` value is writable because a file write replaces it.
     if (this.inherited(ref) !== undefined) {
-      return Promise.resolve({ configured: true, source: 'env', writable: false })
+      return { configured: true, source: 'env', writable: false }
     }
+    const dynamic = this.ctx.get('credentialSources')?.lookup(ref)
+    if (dynamic !== undefined) return dynamic.describe(ref)
     const stored = this.values.get(ref)
-    if (stored !== undefined) return Promise.resolve({ configured: true, source: 'file', writable: true })
+    if (stored !== undefined) return { configured: true, source: 'file', writable: true }
     const fallback = this.dotenvFallback(ref)
-    if (fallback !== undefined) return Promise.resolve({ configured: true, source: fallback.source, writable: true })
-    return Promise.resolve({ configured: false, writable: true })
+    if (fallback !== undefined) return { configured: true, source: fallback.source, writable: true }
+    return { configured: false, writable: true }
   }
 
   override async set(ref: CredentialRef, value: string): Promise<void> {
@@ -403,15 +409,47 @@ export class LocalCredentialProvider extends CredentialProvider {
   }
 
   /**
-   * Reject a write the inherited environment would shadow into apparent
-   * no-effect. Only that layer can shadow a write: everything else this
-   * provider resolves ranks below the document being written.
+   * Reject a write the inherited environment or a dynamic source would shadow
+   * into apparent no-effect.
    */
   private assertUnshadowed(ref: CredentialRef, verb: 'set' | 'unset'): void {
     if (this.inherited(ref) !== undefined) {
       throw new Error(
         `credentials-local: "${ref}" is supplied read-only by the launching environment, so ${verb} would be`
         + ' shadowed; unset it in the shell you start dsh from instead',
+      )
+    }
+    const source = this.ctx.get('credentialSources')?.lookup(ref)
+    if (source !== undefined) {
+      throw new Error(
+        `credentials-local: "${ref}" is owned by credential source "${source.id}", so ${verb} would be`
+        + ' shadowed; use /oauth instead',
+      )
+    }
+  }
+
+  /** Reject a source whose reference already has a stored-file entry. */
+  private assertFileDoesNotClaim(source: CredentialSource): void {
+    for (const ref of source.refs) {
+      if (!this.values.has(ref)) continue
+      throw new Error(
+        `credentials-local: "${ref}" is stored in ${this.spec.filename} but owned by credential source`
+        + ` "${source.id}"; remove the file entry so the source is not shadowed`,
+      )
+    }
+  }
+
+  /** Reject a loaded document that contains a source-owned reference. */
+  private assertNoSourceOwnedFileEntries(entries: Map<string, string>): void {
+    const sources = this.ctx.get('credentialSources')
+    /* v8 ignore next -- the constructor starts the registry when it is absent */
+    if (sources === undefined) return
+    for (const key of entries.keys()) {
+      const source = sources.lookup(credentialRef(key))
+      if (source === undefined) continue
+      throw new Error(
+        `credentials-local: "${key}" is stored in ${this.spec.filename} but owned by credential source`
+        + ` "${source.id}"; remove the file entry so the source is not shadowed`,
       )
     }
   }
@@ -430,7 +468,9 @@ export class LocalCredentialProvider extends CredentialProvider {
       if (!isENOENT(error)) throw error
       return
     }
-    this.values = parseCredentialsDocument(text, this.spec.filename)
+    const values = parseCredentialsDocument(text, this.spec.filename)
+    this.assertNoSourceOwnedFileEntries(values)
+    this.values = values
     this.text = text
   }
 
@@ -475,6 +515,7 @@ export class LocalCredentialProvider extends CredentialProvider {
     }
     if (text === this.text || this.isClosed()) return
     const next = text === undefined ? new Map<string, string>() : parseCredentialsDocument(text, this.spec.filename)
+    this.assertNoSourceOwnedFileEntries(next)
     const changed = this.changedRefs(this.values, next)
     this.text = text
     this.values = next

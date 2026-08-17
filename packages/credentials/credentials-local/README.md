@@ -2,11 +2,12 @@
 
 English | [中文](README.zh.md)
 
-File-backed [credentials](../credentials/README.md) provider: four layers, one honest precedence.
+File-backed [credentials](../credentials/README.md) provider: five layers, one honest precedence.
 
 | Layer | Source id | Writable | Wins |
 |---|---|---|---|
 | Inherited process environment | `env` | no | always |
+| Dynamic credential sources | `oauth` (and others) | no | over the file and both `.env` layers |
 | `$DSH_HOME/.credentials.yaml` document | `file` | yes (`set`/`unset`) | over both `.env` layers |
 | `<invocation cwd>/.env` | `project-env` | not here | over the user `.env` |
 | `$DSH_HOME/.env` | `user-env` | not here | otherwise |

@@ -16,7 +16,7 @@ Status: implemented
 
 目录只提供本适配器认得的东西。`catalogProviderTakesApiKey(provider)` 回答 pi-ai 为某路由安装的提供方是否声明了 api-key 方法——这是 harness 唯一能供给的方法，因为它通过自己的凭据 seam 解析密钥，再作为请求的 `apiKey` 覆盖交给 pi-ai——`directoryEntries()` 跳过不满足它的 catalog 路由。
 
-不尝试实现 OAuth。它需要持久化凭据存储、登录流程，以及运行登录的界面；这三样都不是发布阻塞项的修复，而在它们缺席时仍把提供方摆出来，正是这次报告的成因。
+目录仍扣留仅 OAuth 的 catalog 路由。已经接受 api-key 覆盖的路由（`xai`）的订阅 OAuth 由 [OAuth 凭据源 note](../feature/2026-08-16-oauth-credential-provider.md) 提供；`openai-codex` 仍被扣留，因为 catalog 仍不提供 api-key 方法。
 
 两条边界把「不提供」的范围收窄：
 

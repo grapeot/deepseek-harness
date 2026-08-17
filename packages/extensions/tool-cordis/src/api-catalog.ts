@@ -523,6 +523,36 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Remove one reference from the provider-managed writable source; removing an absent reference is a no-op. Rejects while a read-only source shadows the reference, like set.',
         parameters: [{ name: 'ref', description: 'the reference to remove.' }],
       },
+      {
+        signature: 'announceUpdated(ref: CredentialRef): void',
+        description: 'Fan `credentials/updated` after a committed configured-ness change that did not go through set or unset — a dynamic source\'s login or logout. Silent value rotation does not call this: consumers re-resolve per operation.',
+        parameters: [{ name: 'ref', description: 'the reference whose configured-ness changed.' }],
+      },
+    ],
+  },
+  {
+    key: 'credentialSources',
+    summary: 'Registry of dynamic credential sources.',
+    description: 'Registry of dynamic credential sources. Registration is an effect: the returned disposer unregisters the source. Two sources claiming one reference reject at registration.',
+    methods: [
+      {
+        signature: 'register(source: CredentialSource): () => void',
+        description: 'Register a source for the lifetime of the calling fiber.',
+        parameters: [{ name: 'source', description: 'the source; its refs must not overlap an already-registered source.' }],
+        returns: 'the disposer that unregisters this source.',
+      },
+      {
+        signature: 'addValidator(validate: CredentialSourceValidator): () => void',
+        description: 'Install a validator that runs before a source is admitted. The local provider uses this to reject a source whose reference already has a stored-file entry.',
+        parameters: [{ name: 'validate', description: 'throws to refuse the source.' }],
+        returns: 'the disposer that removes this validator.',
+      },
+      {
+        signature: 'lookup(ref: CredentialRef): CredentialSource | undefined',
+        description: 'Find the source that owns a reference.',
+        parameters: [{ name: 'ref', description: 'the reference to look up.' }],
+        returns: 'the owning source, or `undefined` when none is registered.',
+      },
     ],
   },
   {
@@ -2337,8 +2367,8 @@ export const EVENT_API: readonly EventApiEntry[] = [
     name: 'credentials/updated',
     mode: 'emit',
     signature: '\'credentials/updated\'(ref: CredentialRef): void',
-    summary: 'Committed change to a provider-managed credential source: a `set`, an `unset`, or an external edit observed in storage.',
-    description: 'Committed change to a provider-managed credential source: a `set`, an `unset`, or an external edit observed in storage. Ambient process-environment changes are not observable and never emit. Listener failures are contained and logged — a sync throw and an async rejection alike — without changing the committed operation\'s outcome, except `INVARIANT`-coded failures, which rethrow after every listener ran; that rethrow reaches the emitter only from synchronous listeners, so invariant checks on this event must not be async functions.',
+    summary: 'Committed change to a provider-managed credential source: a `set`, an `unset`, an external edit observed in storage, or an OAuth login or logout that changes configured-ness.',
+    description: 'Committed change to a provider-managed credential source: a `set`, an `unset`, an external edit observed in storage, or an OAuth login or logout that changes configured-ness. Silent token refresh does not emit. Ambient process-environment changes are not observable and never emit. Listener failures are contained and logged — a sync throw and an async rejection alike — without changing the committed operation\'s outcome, except `INVARIANT`-coded failures, which rethrow after every listener ran; that rethrow reaches the emitter only from synchronous listeners, so invariant checks on this event must not be async functions.',
     parameters: [{ name: 'ref', description: 'the reference whose stored value changed.' }],
   },
   {
@@ -2920,6 +2950,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'CredentialRef',
     declaration: 'export type CredentialRef = Branded<\'CredentialRef\'>;',
+  },
+  {
+    name: 'CredentialSource',
+    declaration: 'export interface CredentialSource {\n    readonly id: string;\n    readonly refs: readonly CredentialRef[];\n    resolve(ref: CredentialRef): Promise<ResolvedCredential | undefined>;\n    describe(ref: CredentialRef): Promise<CredentialInfo>;\n}',
+  },
+  {
+    name: 'CredentialSourceValidator',
+    declaration: 'export type CredentialSourceValidator = (source: CredentialSource) => void;',
   },
   {
     name: 'DiffCallView',

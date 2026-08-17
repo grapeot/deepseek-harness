@@ -425,3 +425,69 @@ describe('real hot reload', () => {
     expect(await ctx.credentials.resolve(KEY)).toEqual({ value: 'self-written', source: 'file' })
   })
 })
+
+describe('dynamic credential sources', () => {
+  const sourceRef = credentialRef('XAI_OAUTH_ACCESS')
+
+  function mountSource(ctx: Context, value?: string): () => void {
+    return ctx.credentialSources.register({
+      id: 'oauth:xai',
+      refs: [sourceRef],
+      resolve: () => Promise.resolve(value === undefined ? undefined : { value, source: 'oauth' }),
+      describe: () => Promise.resolve(value === undefined
+        ? { configured: false, writable: false }
+        : { configured: true, source: 'oauth', writable: false }),
+    })
+  }
+
+  it('resolves a source between the environment and the file', async () => {
+    const dir = await tempDir()
+    const path = join(dir, '.credentials.yaml')
+    const ctx = await boot({ path, watch: false })
+    mountSource(ctx, 'oauth-token')
+    expect(await ctx.credentials.resolve(sourceRef)).toEqual({ value: 'oauth-token', source: 'oauth' })
+    expect(await ctx.credentials.describe(sourceRef))
+      .toEqual({ configured: true, source: 'oauth', writable: false })
+  })
+
+  it('lets the launching environment still win over a source', async () => {
+    const dir = await tempDir()
+    const ctx = await boot({ path: join(dir, '.credentials.yaml'), watch: false })
+    mountSource(ctx, 'oauth-token')
+    vi.stubEnv('XAI_OAUTH_ACCESS', 'from-shell')
+    expect(await ctx.credentials.resolve(sourceRef)).toEqual({ value: 'from-shell', source: 'env' })
+  })
+
+  it('rejects set and unset on a source-owned reference', async () => {
+    const dir = await tempDir()
+    const ctx = await boot({ path: join(dir, '.credentials.yaml'), watch: false })
+    mountSource(ctx, 'oauth-token')
+    await expect(ctx.credentials.set(sourceRef, 'nope')).rejects.toThrow(/use \/oauth/)
+    await expect(ctx.credentials.unset(sourceRef)).rejects.toThrow(/use \/oauth/)
+  })
+
+  it('rejects registering a source whose reference is already stored', async () => {
+    const dir = await tempDir()
+    const path = join(dir, '.credentials.yaml')
+    await writeCredentials(path, 'XAI_OAUTH_ACCESS: from-file\n')
+    const ctx = await boot({ path, watch: false })
+    expect(() => mountSource(ctx, 'oauth-token')).toThrow(/stored in/)
+  })
+
+  it('rejects a live reload that introduces a source-owned file entry', async () => {
+    const dir = await tempDir()
+    const path = join(dir, '.credentials.yaml')
+    const ctx = await boot({ path, watch: false })
+    mountSource(ctx, 'oauth-token')
+    await writeCredentials(path, 'XAI_OAUTH_ACCESS: leftover\nDSH_CRED_TEST: other\n')
+    await expect(ctx.credentials.set(KEY, 'next')).rejects.toThrow(/owned by credential source/)
+  })
+
+  it('unregisters the source with its disposer', async () => {
+    const dir = await tempDir()
+    const ctx = await boot({ path: join(dir, '.credentials.yaml'), watch: false })
+    const dispose = mountSource(ctx, 'oauth-token')
+    dispose()
+    expect(await ctx.credentials.resolve(sourceRef)).toBeUndefined()
+  })
+})

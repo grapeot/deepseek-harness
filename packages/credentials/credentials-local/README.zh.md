@@ -2,11 +2,12 @@
 
 [English](README.md) | 中文
 
-文件型[凭据](../credentials/README.md)提供方：四层来源，一套明确的优先级。
+文件型[凭据](../credentials/README.md)提供方：五层来源，一套明确的优先级。
 
 | 层 | 来源 id | 可写 | 优先 |
 |---|---|---|---|
 | 继承的进程环境 | `env` | 否 | 始终优先 |
+| 动态凭据 source | `oauth`（及其他） | 否 | 高于文件层与两个 `.env` 层 |
 | `$DSH_HOME/.credentials.yaml` 文档 | `file` | 是（`set`/`unset`） | 高于两个 `.env` 层 |
 | `<invocation cwd>/.env` | `project-env` | 不在此处 | 高于用户 `.env` |
 | `$DSH_HOME/.env` | `user-env` | 不在此处 | 其余情况 |
