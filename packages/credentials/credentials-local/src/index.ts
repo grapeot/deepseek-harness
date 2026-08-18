@@ -272,7 +272,9 @@ export class LocalCredentialProvider extends CredentialProvider {
       await this.operations
     }
     await this.loadInitial()
-    this.ctx.get('credentialSources')?.addValidator(source => this.assertFileDoesNotClaim(source))
+    this.ctx.get('credentialSources')?.addValidator((source) => {
+      this.assertFileDoesNotClaim(source)
+    })
     if (!this.spec.watch) return
     /* jscpd:ignore-start -- same watcher discipline as settings-file by design:
        the serialized-refresh and quiesce-on-dispose shape is the reviewed

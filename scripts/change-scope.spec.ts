@@ -224,7 +224,8 @@ describe('change-scope', () => {
     }
   })
 
-  it('renders deterministic versioned JSON', () => {
+  // Hosted Windows git (switch + two commits + two reports) exceeds the 5s default.
+  it('renders deterministic versioned JSON', { timeout: 20_000 }, () => {
     const { root } = fixture()
     git(root, ['switch', '-c', 'format'])
     commit(root, 'zeta.txt', 'zeta\n')
