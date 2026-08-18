@@ -62,16 +62,17 @@ describe('CI workflow', () => {
     expect(windows.if).toBe("github.event_name == 'pull_request'")
     expect(commandSteps.some(step => step.run.includes('wine-windows-gates.sh'))).toBe(true)
 
-    // windows-native: non-blocking native job, runs windows-complete. This fork
-    // has no dsh-* larger runners and no self-hosted failover pool, so the job
-    // resolves to a hosted runner instead of upstream's failover switch.
-    expect(windowsNative['runs-on']).toBe('windows-latest')
+    // windows-native: non-blocking job, kept succeeding as a no-op on this
+    // fork's 4-core hosted runners. The complete inventory is disabled until
+    // a larger runner is available.
+    expect(windowsNative['runs-on']).toBe('ubuntu-latest')
     expect(windowsNative.name).toBe('windows node 24 / native complete')
     expect(windowsNative.if).toBe("github.event_name == 'pull_request'")
     const nativeCommandSteps = (windowsNative.steps as unknown[]).filter((step): step is Record<string, unknown> & { run: string } => (
       isRecord(step) && typeof step.run === 'string'
     ))
-    expect(nativeCommandSteps.map(step => step.run)).toContain('pnpm run check:ci:windows-complete')
+    expect(nativeCommandSteps.map(step => step.run).join('\n')).toMatch(/Disabled on this fork's 4-core hosted runners/)
+    expect(nativeCommandSteps.map(step => step.run)).not.toContain('pnpm run check:ci:windows-complete')
 
     // wine-apt-cache: master-only, seeds the Wine apt cache.
     expect(wineAptCache.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/master'")
