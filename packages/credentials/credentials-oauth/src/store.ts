@@ -38,6 +38,7 @@ function isENOENT(error: unknown): boolean {
  * Resolve the store path: an explicit `path` wins, otherwise the document
  * lives at `<harness home>/.oauth-credentials.json`.
  * @param config - optional path and home overrides.
+ * @returns the absolute store path.
  */
 export function resolveStorePath(config: { path?: string; dshHome?: string }): string {
   return resolve(config.path ?? join(resolveDshHome(config.dshHome), OAUTH_STORE_FILENAME))
@@ -74,6 +75,7 @@ export async function assertOwnerOnly(filename: string): Promise<void> {
  * An unknown version, a non-object root, or a malformed flow entry fails loud.
  * @param text - file text.
  * @param filename - quoted in errors.
+ * @returns the parsed document.
  */
 export function parseOAuthStore(text: string, filename: string): OAuthStoreDocument {
   let parsed: unknown

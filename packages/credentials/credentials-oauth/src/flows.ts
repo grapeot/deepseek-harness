@@ -42,6 +42,7 @@ export interface OAuthFlow {
 /**
  * Whether `id` is a flow this package ships.
  * @param id - candidate flow id from plugin config.
+ * @returns true when `id` is a {@link BuiltinFlowId}.
  */
 export function isBuiltinFlowId(id: string): id is BuiltinFlowId {
   return (BUILTIN_FLOW_IDS as readonly string[]).includes(id)
@@ -60,7 +61,7 @@ export async function loadBuiltInFlow(id: string): Promise<OAuthFlow> {
     if (oauth === undefined) {
       throw new Error('credentials-oauth: the installed xai provider has no oauth flow')
     }
-    return oauth as OAuthFlow
+    return oauth
   }
   throw new Error(`credentials-oauth: unknown flow "${id}"`)
 }
@@ -69,6 +70,7 @@ export async function loadBuiltInFlow(id: string): Promise<OAuthFlow> {
  * Default credential reference for one flow: `<FLOW>_OAUTH_ACCESS` with
  * hyphens folded to underscores.
  * @param flowId - the flow id.
+ * @returns the conventional reference name.
  */
 export function defaultCredentialRef(flowId: string): string {
   return `${flowId.toUpperCase().replaceAll('-', '_')}_OAUTH_ACCESS`

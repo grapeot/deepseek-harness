@@ -107,7 +107,7 @@ export function applyOAuth(ctx: Context, config: Config, resolveFlow: ResolveFlo
     if (!isBuiltinFlowId(id)) {
       throw new Error(`credentials-oauth: unknown flow "${id}"`)
     }
-    const rawRef = entry?.credentialRef ?? defaultCredentialRef(id)
+    const rawRef = entry.credentialRef ?? defaultCredentialRef(id)
     const ref = credentialRef(rawRef)
     const load = resolveFlow(id)
     mounted.set(id, { id, ref, load })
@@ -228,7 +228,7 @@ export function applyOAuth(ctx: Context, config: Config, resolveFlow: ResolveFlo
 
     const generation = bumpGeneration(id)
     const abort = new AbortController()
-    ctx.effect(() => () => abort.abort(), `credentials-oauth.login(${id})`)
+    ctx.effect(() => () => { abort.abort() }, `credentials-oauth.login(${id})`)
     const flow = await flowOf(id)
     let notified = false
     let settleDevice!: (event: DeviceCodeEvent) => void
@@ -237,7 +237,7 @@ export function applyOAuth(ctx: Context, config: Config, resolveFlow: ResolveFlo
       settleDevice = resolve
       failDevice = reject
     })
-    abort.signal.addEventListener('abort', () => failDevice(abortError(abort.signal)), { once: true })
+    abort.signal.addEventListener('abort', () => { failDevice(abortError(abort.signal)) }, { once: true })
 
     const login = flow.login({
       signal: abort.signal,
@@ -346,7 +346,12 @@ function abortError(signal: AbortSignal): Error {
   return new Error(typeof signal.reason === 'string' ? signal.reason : 'oauth login aborted')
 }
 
-/** Parse `/oauth` arguments and dispatch. */
+/**
+ * Parse `/oauth` arguments and dispatch.
+ * @param rawInput - the command line after `/oauth`.
+ * @param actions - verb implementations.
+ * @returns the command result.
+ */
 export async function handleOAuthCommand(
   rawInput: string,
   actions: {
